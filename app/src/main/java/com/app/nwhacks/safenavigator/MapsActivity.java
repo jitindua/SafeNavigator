@@ -1,5 +1,6 @@
 package com.app.nwhacks.safenavigator;
 
+import android.graphics.Color;
 import android.os.AsyncTask;
 import android.support.v4.app.FragmentActivity;
 import android.os.Bundle;
@@ -11,6 +12,8 @@ import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.maps.model.Polyline;
+import com.google.android.gms.maps.model.PolylineOptions;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -22,6 +25,8 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.Map;
 //import java.net.URLConnection;
 
 public class MapsActivity extends FragmentActivity implements OnMapReadyCallback {
@@ -29,6 +34,7 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     private GoogleMap mMap;
     private String org, dest;
     private static final String LOG_TAG = "MAP";
+    DataExtractor dataExtractor;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -38,15 +44,16 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
+
+
+        try {
+
+            dataExtractor = new DataTask().execute(R.raw.crimedata).get();
+        }catch (Exception e){
+            Log.i(LOG_TAG, e.toString());
+        }
+
     }
-
-    protected void FindRoute(String origin, String Destination)
-    {
-
-
-    }
-
-
     /**
      * Manipulates the map once available.
      * This callback is triggered when the map is ready to be used.
@@ -92,13 +99,77 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
             Log.i(LOG_TAG, "JSON Size:\n" + jsonObject.toString());
         }
 
+        //
+        Log.i(LOG_TAG, "Before Extractor \n");
+        //InputStream is = getResources().openRawResource(R.raw.model);
+        //InputStream is = getResources().openRawResource(R.raw.crimedata);
+        //DataExtractor dataExtractor = new DataExtractor(is);
+
+        Map<Integer, Double> scoreMap = null;
+
+        try {
+
+            scoreMap = new CalcTask().execute(jsonObject).get();
+            ;
+        }catch (Exception e){
+            Log.i(LOG_TAG, e.toString());
+        }
+
+        ArrayList<ArrayList<LatLng>> pointsArrayList =  dataExtractor.GetLatLangList();
+        Log.i(LOG_TAG, "After Extractor \n");
+
+        int numRoutes = scoreMap.size();
+
+        int minIndex = 0;
+        Log.i(LOG_TAG, "#Route Score: " + numRoutes);
+        for(int i=0; i<numRoutes; i++){
+            if(scoreMap.get(i)!=null)
+            {
+                if(scoreMap.get(i)<scoreMap.get(minIndex))
+                {
+                    minIndex = i;
+                }
+                Log.i(LOG_TAG, "Score for " + i + ": " + scoreMap.get(i));
+            }
+        }
+
+
+
+
         // Add a marker in Sydney and move the camera
         /*
         LatLng sydney = new LatLng(-34, 151);
         mMap.addMarker(new MarkerOptions().position(sydney).title("Marker in Sydney"));
         mMap.moveCamera(CameraUpdateFactory.newLatLng(sydney));
         */
-        //mMap.
+        int currIndex = 0;
+        for(ArrayList<LatLng> routeLatLng : pointsArrayList) {
+
+            PolylineOptions polyLineOptions = null;
+
+            if(currIndex == minIndex)
+            {
+                polyLineOptions = new PolylineOptions().width(10).color(Color.BLUE).geodesic(true);
+            }
+            else
+            {
+                polyLineOptions = new PolylineOptions().width(10).color(Color.GRAY).geodesic(true);
+            }
+
+
+            for (LatLng latLng : routeLatLng) {
+                polyLineOptions.add(latLng);
+            }
+            mMap.addPolyline(polyLineOptions);
+
+            currIndex++;
+        }
+        //mMap.clear();
+        LatLng source = pointsArrayList.get(0).get(0);
+
+        mMap.moveCamera(CameraUpdateFactory.newLatLng(source));
+
+
     }
 
     public JSONObject getLocationInfo(String route) {
@@ -207,6 +278,53 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
             // TODO: do something with the feed
         }
     }
+
+
+    class DataTask extends AsyncTask<Integer, Void, DataExtractor> {
+
+        private Exception exception;
+
+        protected DataExtractor doInBackground(Integer... ids) {
+            try {
+                InputStream is = getResources().openRawResource(ids[0]);
+                dataExtractor = new DataExtractor(is);
+                return dataExtractor;
+                //getLocationInfo(urls[0]);
+            } catch (Exception e) {
+                this.exception = e;
+                return null;
+            }
+        }
+
+        protected void onPostExecute(DataExtractor json) {
+            // TODO: check this.exception
+            // TODO: do something with the feed
+        }
+    }
+
+
+    class CalcTask extends AsyncTask<JSONObject, Void, Map<Integer, Double>> {
+
+        private Exception exception;
+
+        protected Map<Integer, Double> doInBackground(JSONObject... jsos) {
+            try {
+                Map<Integer, Double> scoreMap = dataExtractor.calcScore(jsos[0]);
+                return scoreMap;
+
+                //getLocationInfo(urls[0]);
+            } catch (Exception e) {
+                this.exception = e;
+                return null;
+            }
+        }
+
+        protected void onPostExecute(DataExtractor json) {
+            // TODO: check this.exception
+            // TODO: do something with the feed
+        }
+    }
+
 
 }
 
